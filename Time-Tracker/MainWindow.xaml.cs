@@ -21,38 +21,74 @@ namespace Time_Tracker
     /// </summary>
     public partial class MainWindow : Window
     {
-        List<string[]> m_oCollection = new List<string[]>();
-        string m_sDocPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\TimeTracker.csv";
+        private GridData mGridData = new GridData();
+        private string mDocPath = Environment.GetFolderPath(Environment.SpecialFolder.Desktop) + @"\TimeTracker.csv";
+        private static double WINDOW_HEIGHT;
+        private static int ROW_HEIGHT = 22;
         public MainWindow()
         {
             InitializeComponent();
+            WINDOW_HEIGHT = myWindow.Height;
             Microsoft.Win32.SystemEvents.SessionSwitch += new Microsoft.Win32.SessionSwitchEventHandler(SystemEvents_SessionSwitch);
             loadFromFile();
         }
-        private void addLineToGrid()
+        private void refreshGrid()
         {
-            Label lblTime = new Label();
-            Label lblKey = new Label();
-            Label lblDesc = new Label();
+            myGrid.Children.Clear();
 
-            //lblUpdated.Content = String.Format("Last update ({0}):", time);
-            lblTime.Content = m_oCollection[m_oCollection.Count - 1][0];
-            lblKey.Content = m_oCollection[m_oCollection.Count - 1][1];
-            lblDesc.Content = m_oCollection[m_oCollection.Count - 1][2];
+            var keyDict = new Dictionary<string, int[]>();
+            for (int i = 0; i < mGridData.Count; i++)
+            {
+                Label lblTime = new Label();
+                Label lblKey = new Label();
+                Label lblDesc = new Label();
 
-            Grid.SetRow(lblTime, m_oCollection.Count - 1);
-            Grid.SetRow(lblKey, m_oCollection.Count - 1);
-            Grid.SetRow(lblDesc, m_oCollection.Count - 1);
-            Grid.SetColumn(lblTime, 0);
-            Grid.SetColumn(lblKey, 1);
-            Grid.SetColumn(lblDesc, 2);
+                lblTime.Content = mGridData.Item(i).Time;
+                lblKey.Content = mGridData.Item(i).Key;
+                lblDesc.Content = mGridData.Item(i).Description;
+                lblTime.Padding = new Thickness(1, 1, 1, 1);
+                lblKey.Padding = new Thickness(1, 1, 1, 1);
+                lblDesc.Padding = new Thickness(1, 1, 1, 1);
 
-            myWindow.Height += 20;
+                Grid.SetRow(lblTime, i);
+                Grid.SetRow(lblKey, i);
+                Grid.SetRow(lblDesc, i);
+                Grid.SetColumn(lblTime, 0);
+                Grid.SetColumn(lblKey, 1);
+                Grid.SetColumn(lblDesc, 2);
 
-            myGrid.RowDefinitions.Add(new RowDefinition());
-            myGrid.Children.Add(lblTime);
-            myGrid.Children.Add(lblKey);
-            myGrid.Children.Add(lblDesc);
+                RowDefinition rowDef = new RowDefinition();
+                rowDef.Height = new GridLength(ROW_HEIGHT);
+                myGrid.RowDefinitions.Add(rowDef);
+
+                myGrid.Children.Add(lblTime);
+                myGrid.Children.Add(lblKey);
+                myGrid.Children.Add(lblDesc);
+
+                if (keyDict.ContainsKey(mGridData.Item(i).Key))
+                {
+                    int[] data = keyDict[mGridData.Item(i).Key];
+                    data[0] = i;
+                    data[1] += mGridData.TimeElapsedAt(i);
+                    keyDict[mGridData.Item(i).Key] = data;
+                }
+                else
+                {
+                    keyDict.Add(mGridData.Item(i).Key, new int[] { i, mGridData.TimeElapsedAt(i) });
+                }
+            }
+
+            foreach (KeyValuePair<string, int[]> entry in keyDict)
+            {
+                Label lblDynamic = new Label();
+                lblDynamic.Content = StringUtilities.formatTimeText(entry.Value[1]);
+                lblDynamic.Padding = new Thickness(1, 1, 1, 1);
+                Grid.SetRow(lblDynamic, entry.Value[0]);
+                Grid.SetColumn(lblDynamic, 3);
+                myGrid.Children.Add(lblDynamic);
+            }
+
+            myWindow.Height = WINDOW_HEIGHT + ROW_HEIGHT * mGridData.Count;
 
             txtKey.Text = "";
             txtDescription.Text = "";
@@ -63,10 +99,10 @@ namespace Time_Tracker
         {
             StringBuilder sb = new StringBuilder();
             
-            sb.AppendLine(String.Join(",", m_oCollection.Last()));
+            sb.AppendLine(String.Join(",", mGridData.Last().ToArray()));
             try
             {
-                using (StreamWriter outFile = new StreamWriter(m_sDocPath, true))
+                using (StreamWriter outFile = new StreamWriter(mDocPath, true))
                 {
                     outFile.Write(sb.ToString());
                 }
@@ -92,7 +128,7 @@ namespace Time_Tracker
                     addTransaction(new string[] { "BREAK", "Computer locked" });
                     break;
                 case Microsoft.Win32.SessionSwitchReason.SessionUnlock:
-                    addTransaction(m_oCollection[m_oCollection.Count - 2]);
+                    addTransaction(mGridData.Item(mGridData.Count - 2).ToArray());
                     break;
             }
         }
@@ -100,30 +136,31 @@ namespace Time_Tracker
         {
             if (transaction.Length == 2)
             {
-                m_oCollection.Add(new string[] {DateTime.Now.ToString("h:mm tt"), transaction[0], transaction[1]});
+                mGridData.Add(new string[] { DateTime.Now.ToString("h:mm tt"), transaction[0], transaction[1] });
             }
             else
             {
-                m_oCollection.Add(transaction);
+                transaction[0] = DateTime.Now.ToString("h:mm tt");
+                mGridData.Add(transaction);
             }
             addLinetoFile();
-            addLineToGrid();
+            refreshGrid();
         }
         private void loadFromFile()
         {
-            if (File.Exists(m_sDocPath))
+            if (File.Exists(mDocPath))
             {
                 try
                 {
-                    using (StreamReader sr = new StreamReader(m_sDocPath))
+                    using (StreamReader sr = new StreamReader(mDocPath))
                     {
                         while (sr.Peek() >= 0)
                         {
                             string line = sr.ReadLine();
                             string[] data = line.Split(',');
-                            m_oCollection.Add(data);
-                            addLineToGrid();
+                            mGridData.Add(data);
                         }
+                        refreshGrid();
                     }
                 }
                 catch (Exception ex)
